@@ -4,9 +4,10 @@ import sys
 
 import transformers
 from pretrain.arguments import DataTrainingArguments, ModelArguments
-from pretrain.data import DatasetForPretraining, RetroMAECollator, DupMAECollator
+from pretrain.data import DatasetForPretraining, RetroMAECollator, DupMAECollator, VanillaMLMCollator
 from pretrain.modeling import RetroMAEForPretraining
 from pretrain.modeling_duplex import DupMAEForPretraining
+from pretrain.yyh_modeling import BERTForPretraining, YYHBertForMaskedLM
 from pretrain.trainer import PreTrainer
 from transformers import (
     AutoTokenizer,
@@ -92,6 +93,9 @@ def main():
     elif model_args.pretrain_method == 'dupmae':
         model_class = DupMAEForPretraining
         collator_class = DupMAECollator
+    elif model_args.pretrain_method == 'bert' or model_args.pretrain_method == 'yyh':
+        model_class = BERTForPretraining
+        collator_class = VanillaMLMCollator
     else:
         raise NotImplementedError
 
@@ -101,7 +105,10 @@ def main():
         tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
     elif model_args.config_name:
         config = AutoConfig.from_pretrained(model_args.config_name)
-        bert = BertForMaskedLM(config)
+        if model_args.pretrain_method == 'yyh':
+            bert = YYHBertForMaskedLM(config, model_args.emb_num)
+        else:
+            bert = BertForMaskedLM(config)
         model = model_class(bert, model_args)
         logger.info("------Init the model------")
         tokenizer = AutoTokenizer.from_pretrained(data_args.tokenizer_name)

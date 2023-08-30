@@ -43,3 +43,7 @@ class ModelArguments:
     bow_loss_weight: Optional[float] = field(
         default=0.1, metadata={"help": "The weight of bag_of_word_loss"}
     )
+
+    emb_num: Optional[int] = field(
+        default=1, metadata={"help": "how many embeddings per token of decoder"}
+    )
