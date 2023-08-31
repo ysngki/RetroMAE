@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 def main():
+    local_rank = int(os.environ["LOCAL_RANK"])
+
     parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     model_args: ModelArguments
@@ -37,14 +39,14 @@ def main():
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
-        level=logging.INFO if training_args.local_rank in [-1, 0] else logging.WARN,
+        level=logging.INFO if local_rank in [-1, 0] else logging.WARN,
     )
     logger.warning(
         "Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
-        training_args.local_rank,
+        local_rank,
         training_args.device,
         training_args.n_gpu,
-        bool(training_args.local_rank != -1),
+        bool(local_rank != -1),
         training_args.fp16,
     )
     logger.info("Training/evaluation parameters %s", training_args)

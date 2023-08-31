@@ -1,5 +1,6 @@
 import logging
 from typing import Optional
+import os
 
 import torch
 import torch.distributed as dist
@@ -29,7 +30,8 @@ class CrossEncoder(nn.Module):
             torch.zeros(self.train_args.per_device_train_batch_size, dtype=torch.long)
         )
 
-        if train_args.local_rank >= 0:
+        self.local_rank = int(os.environ["LOCAL_RANK"])
+        if self.local_rank >= 0:
             self.world_size = dist.get_world_size()
 
     def forward(self, batch):
@@ -71,7 +73,7 @@ class CrossEncoder(nn.Module):
 
         all_tensors = [torch.empty_like(t) for _ in range(self.world_size)]
         dist.all_gather(all_tensors, t)
-        all_tensors[self.train_args.local_rank] = t
+        all_tensors[self.local_rank] = t
         all_tensors = torch.cat(all_tensors, dim=0)
 
         return all_tensors
