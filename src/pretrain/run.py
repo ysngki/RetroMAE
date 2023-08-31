@@ -38,6 +38,7 @@ def main():
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
     local_rank = int(os.environ["LOCAL_RANK"])
+    os.environ['WANDB_PROJECT'] = "retromae"
 
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):

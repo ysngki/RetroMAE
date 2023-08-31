@@ -8,7 +8,7 @@ setup(
     install_requires=[
         'torch>=1.6.0',
         'transformers>=4.18.0',
-        'datasets==1.18.3',
+        'datasets>=1.18.3',
         'faiss-gpu>=1.6'
     ],
 )
