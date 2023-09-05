@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 def main():
     local_rank = int(os.environ["LOCAL_RANK"])
+    os.environ['WANDB_PROJECT'] = "retromae"
 
     parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()

@@ -8,7 +8,7 @@ from transformers import BertForMaskedLM, AutoModelForMaskedLM, BertPreTrainedMo
 from transformers.modeling_outputs import MaskedLMOutput
 from transformers.utils import add_start_docstrings, add_start_docstrings_to_model_forward, add_code_sample_docstrings
 from transformers.activations import ACT2FN
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Mapping, Any
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,32 @@ class BERTForPretraining(nn.Module):
 
     def save_pretrained(self, output_dir: str):
         self.lm.save_pretrained(output_dir)
+    
+    def load_state_dict(self, state_dict: Mapping[str, Any],
+                        strict: bool = True):
+        r"""Copies parameters and buffers from :attr:`state_dict` into
+        this module and its descendants. If :attr:`strict` is ``True``, then
+        the keys of :attr:`state_dict` must exactly match the keys returned
+        by this module's :meth:`~torch.nn.Module.state_dict` function.
+
+        Args:
+            state_dict (dict): a dict containing parameters and
+                persistent buffers.
+            strict (bool, optional): whether to strictly enforce that the keys
+                in :attr:`state_dict` match the keys returned by this module's
+                :meth:`~torch.nn.Module.state_dict` function. Default: ``True``
+
+        Returns:
+            ``NamedTuple`` with ``missing_keys`` and ``unexpected_keys`` fields:
+                * **missing_keys** is a list of str containing the missing keys
+                * **unexpected_keys** is a list of str containing the unexpected keys
+
+        Note:
+            If a parameter or buffer is registered as ``None`` and its corresponding key
+            exists in :attr:`state_dict`, :meth:`load_state_dict` will raise a
+            ``RuntimeError``.
+        """
+        return self.lm.load_state_dict(state_dict, strict)
 
     @classmethod
     def from_pretrained(
@@ -47,6 +73,68 @@ class BERTForPretraining(nn.Module):
         hf_model = AutoModelForMaskedLM.from_pretrained(*args, **kwargs)
         model = cls(hf_model, model_args)
         return model
+    
+
+class YYHBERTForPretraining(nn.Module):
+    def __init__(
+            self,
+            bert,
+            model_args: ModelArguments,
+    ):
+        super(YYHBERTForPretraining, self).__init__()
+        self.lm = bert
+
+        self.model_args = model_args
+
+    def forward(self,
+                encoder_input_ids, encoder_attention_mask, encoder_labels):
+        # return (torch.sum(self.lm.bert.embeddings.position_ids[:, :decoder_input_ids.size(1)]), )
+        lm_out: MaskedLMOutput = self.lm(
+            encoder_input_ids, encoder_attention_mask,
+            labels=encoder_labels,
+            output_hidden_states=True,
+            return_dict=True
+        )
+
+        return (lm_out.loss,)
+
+    def save_pretrained(self, output_dir: str):
+        self.lm.save_pretrained(output_dir)
+
+    @classmethod
+    def from_pretrained(
+            cls, model_args: ModelArguments,
+            *args, **kwargs
+    ):
+        hf_model = YYHBertForMaskedLM.from_pretrained(*args, **kwargs)
+        model = cls(hf_model, model_args)
+        return model
+    
+    def load_state_dict(self, state_dict: Mapping[str, Any],
+                        strict: bool = True):
+        r"""Copies parameters and buffers from :attr:`state_dict` into
+        this module and its descendants. If :attr:`strict` is ``True``, then
+        the keys of :attr:`state_dict` must exactly match the keys returned
+        by this module's :meth:`~torch.nn.Module.state_dict` function.
+
+        Args:
+            state_dict (dict): a dict containing parameters and
+                persistent buffers.
+            strict (bool, optional): whether to strictly enforce that the keys
+                in :attr:`state_dict` match the keys returned by this module's
+                :meth:`~torch.nn.Module.state_dict` function. Default: ``True``
+
+        Returns:
+            ``NamedTuple`` with ``missing_keys`` and ``unexpected_keys`` fields:
+                * **missing_keys** is a list of str containing the missing keys
+                * **unexpected_keys** is a list of str containing the unexpected keys
+
+        Note:
+            If a parameter or buffer is registered as ``None`` and its corresponding key
+            exists in :attr:`state_dict`, :meth:`load_state_dict` will raise a
+            ``RuntimeError``.
+        """
+        return self.lm.load_state_dict(state_dict, strict)
 
 
 ######################################################################################
@@ -136,37 +224,80 @@ class BertPredictionHeadTransform(nn.Module):
         return hidden_states
     
 
+# class BertLMPredictionHead(nn.Module):
+#     def __init__(self, config, emb_num):
+#         super().__init__()
+#         self.emb_num = emb_num
+#         self.vocab_size = config.vocab_size
+#         self.hidden_size = config.hidden_size
+
+#         self.transform = BertPredictionHeadTransform(config)
+
+#         self.projector = nn.Linear(config.hidden_size, config.hidden_size  * emb_num)
+
+#         # The output weights are the same as the input embeddings, but there is
+#         # an output-only bias for each token.
+#         self.decoder = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+#         self.bias = nn.Parameter(torch.zeros(config.vocab_size))
+
+#         # Need a link between the two variables so that the bias is correctly resized with `resize_token_embeddings`
+#         self.decoder.bias = self.bias
+
+#     def forward(self, hidden_states):
+#         hidden_states = self.projector(hidden_states)
+#         target_shape = list(hidden_states.shape)[:-1]
+#         target_shape.extend([self.emb_num, self.hidden_size])
+#         hidden_states = hidden_states.reshape(target_shape)
+
+#         hidden_states = self.transform(hidden_states)
+#         hidden_states = self.decoder(hidden_states)
+
+#         hidden_states = torch.max(hidden_states, dim=-2)[0].contiguous()
+
+#         return hidden_states
+
+
+
 class BertLMPredictionHead(nn.Module):
-    def __init__(self, config, emb_num):
+    def __init__(self, config, emb_num, code_num):
         super().__init__()
+        self.emb_num = emb_num
+        self.code_num = code_num
+        self.vocab_size = config.vocab_size
+        self.hidden_size = config.hidden_size
+
         self.transform = BertPredictionHeadTransform(config)
+
+        self.code_book = nn.Linear(config.hidden_size, self.code_num, bias=False)
 
         # The output weights are the same as the input embeddings, but there is
         # an output-only bias for each token.
-        self.decoder = nn.Linear(config.hidden_size, config.vocab_size * emb_num, bias=False)
+        self.voc_mapping = nn.Linear(self.code_num, config.vocab_size * self.emb_num, bias=False)
 
-        self.bias = nn.Parameter(torch.zeros(config.vocab_size * emb_num))
+        self.voc_bias = nn.Parameter(torch.zeros(config.vocab_size * self.emb_num))
 
         # Need a link between the two variables so that the bias is correctly resized with `resize_token_embeddings`
-        self.decoder.bias = self.bias
-
-        self.vocab_size = config.vocab_size
+        self.voc_mapping.bias = self.voc_bias
 
     def forward(self, hidden_states):
         hidden_states = self.transform(hidden_states)
-        hidden_states = self.decoder(hidden_states)
-        
+        hidden_states = self.code_book(hidden_states)
+        hidden_states = self.voc_mapping(hidden_states)
+
         target_shape = list(hidden_states.shape)[:-1]
         target_shape.extend([self.vocab_size, self.emb_num])
         hidden_states = hidden_states.reshape(target_shape)
+
         hidden_states = torch.max(hidden_states, dim=-1)[0].contiguous()
+
         return hidden_states
     
 
 class BertOnlyMLMHead(nn.Module):
-    def __init__(self, config, emb_num):
+    def __init__(self, config, emb_num, code_num):
         super().__init__()
-        self.predictions = BertLMPredictionHead(config, emb_num)
+        self.predictions = BertLMPredictionHead(config, emb_num=emb_num, code_num=code_num)
 
     def forward(self, sequence_output: torch.Tensor) -> torch.Tensor:
         prediction_scores = self.predictions(sequence_output)
@@ -175,9 +306,10 @@ class BertOnlyMLMHead(nn.Module):
 
 @add_start_docstrings("""Bert Model with a `language modeling` head on top.""", BERT_START_DOCSTRING)
 class YYHBertForMaskedLM(BertPreTrainedModel):
-    _tied_weights_keys = ["predictions.decoder.bias", "cls.predictions.decoder.weight"]
+    _keys_to_ignore_on_load_unexpected = [r"pooler", r"predictions.decoder.bias", r"cls.predictions.decoder.weight", r"cls.predictions.bias"]
+    _keys_to_ignore_on_load_missing = [r"position_ids", r"cls.predictions.code_book.weight", r"predictions.voc_mapping.bias", r"cls.predictions.voc_mapping.weight", r"cls.predictions.voc_bias"]
 
-    def __init__(self, config, emb_num=1):
+    def __init__(self, config, emb_num=1, code_num=1):
         super().__init__(config)
 
         if config.is_decoder:
@@ -187,18 +319,16 @@ class YYHBertForMaskedLM(BertPreTrainedModel):
             )
 
         self.bert = BertModel(config, add_pooling_layer=False)
-        self.emb_num = emb_num
-        self.cls = BertOnlyMLMHead(config, emb_num)
+        self.cls = BertOnlyMLMHead(config, emb_num=emb_num, code_num=code_num)
 
         # Initialize weights and apply final processing
         self.post_init()
 
     def get_output_embeddings(self):
-        # return none will prevent tie_weights
         return None
 
     def set_output_embeddings(self, new_embeddings):
-        raise Exception("Not implemnetd yet by yyh!")
+        raise Exception("yyh here!!!")
         self.cls.predictions.decoder = new_embeddings
 
     @add_start_docstrings_to_model_forward(BERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))

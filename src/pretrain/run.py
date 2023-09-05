@@ -7,7 +7,7 @@ from pretrain.arguments import DataTrainingArguments, ModelArguments
 from pretrain.data import DatasetForPretraining, RetroMAECollator, DupMAECollator, VanillaMLMCollator
 from pretrain.modeling import RetroMAEForPretraining
 from pretrain.modeling_duplex import DupMAEForPretraining
-from pretrain.yyh_modeling import BERTForPretraining, YYHBertForMaskedLM
+from pretrain.yyh_modeling import YYHBERTForPretraining, BERTForPretraining, YYHBertForMaskedLM
 from pretrain.trainer import PreTrainer
 from transformers import (
     AutoTokenizer,
@@ -95,14 +95,20 @@ def main():
     elif model_args.pretrain_method == 'dupmae':
         model_class = DupMAEForPretraining
         collator_class = DupMAECollator
-    elif model_args.pretrain_method == 'bert' or model_args.pretrain_method == 'yyh':
+    elif model_args.pretrain_method == 'bert':
         model_class = BERTForPretraining
+        collator_class = VanillaMLMCollator
+    elif model_args.pretrain_method == 'yyh':
+        model_class = YYHBERTForPretraining
         collator_class = VanillaMLMCollator
     else:
         raise NotImplementedError
 
     if model_args.model_name_or_path:
-        model = model_class.from_pretrained(model_args, model_args.model_name_or_path)
+        if model_args.pretrain_method == 'yyh':
+            model = model_class.from_pretrained(model_args, model_args.model_name_or_path, emb_num=model_args.emb_num, code_num=model_args.code_num)
+        else:
+            model = model_class.from_pretrained(model_args, model_args.model_name_or_path)
         logger.info(f"------Load model from {model_args.model_name_or_path}------")
         tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
     elif model_args.config_name:
@@ -135,7 +141,7 @@ def main():
 
     # # Training
     if training_args.do_train:
-        trainer.train()
+        trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
         trainer.save_model()  # Saves the tokenizer too for easy upload
 
 

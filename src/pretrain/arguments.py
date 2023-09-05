@@ -47,3 +47,7 @@ class ModelArguments:
     emb_num: Optional[int] = field(
         default=1, metadata={"help": "how many embeddings per token of decoder"}
     )
+
+    code_num: Optional[int] = field(
+        default=1, metadata={"help": "when factorize the embedding, we have two matrix as (vocab_size, code_num) and (code num, hidden states)"}
+    )

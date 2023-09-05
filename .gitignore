@@ -1,5 +1,11 @@
 bert_data/
 wandb/
+output/
+bi_ms_output/
+examples/retriever/msmarco/data/
+examples/retriever/BEIR/datasets/
+bi_data
+beir_neg.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
