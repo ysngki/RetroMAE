@@ -141,7 +141,7 @@ def main():
 
     # # Training
     if training_args.do_train:
-        trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
+        trainer.train(resume_from_checkpoint=bool(training_args.resume_from_checkpoint))
         trainer.save_model()  # Saves the tokenizer too for easy upload
 
 
