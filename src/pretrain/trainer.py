@@ -35,10 +35,13 @@ class PreTrainer(Trainer):
         # They can then be reloaded using `from_pretrained()`
         if not hasattr(self.model, 'save_pretrained'):
             logger.info("Trainer.model is not a `PreTrainedModel`, only saving its state dict.")
-            state_dict = self.model.state_dict()
-            torch.save(state_dict, os.path.join(output_dir, "pytorch_model.bin"))
         else:
+            # this will produce: config.json, pytorch_model.lm.bin ( weights of self.model.lm , used for fine-tuning)
             self.model.save_pretrained(output_dir)
+
+        state_dict = self.model.state_dict()
+        torch.save(state_dict, os.path.join(output_dir, "pytorch_model.bin"))
+        
         if self.tokenizer is not None:
             self.tokenizer.save_pretrained(output_dir)
 

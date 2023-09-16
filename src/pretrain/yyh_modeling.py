@@ -99,7 +99,7 @@ class YYHBERTForPretraining(nn.Module):
         return (lm_out.loss,)
 
     def save_pretrained(self, output_dir: str):
-        self.lm.save_pretrained(output_dir)
+        self.lm.save_pretrained(output_dir, variant='lm')
 
     @classmethod
     def from_pretrained(
@@ -110,31 +110,31 @@ class YYHBERTForPretraining(nn.Module):
         model = cls(hf_model, model_args)
         return model
     
-    def load_state_dict(self, state_dict: Mapping[str, Any],
-                        strict: bool = True):
-        r"""Copies parameters and buffers from :attr:`state_dict` into
-        this module and its descendants. If :attr:`strict` is ``True``, then
-        the keys of :attr:`state_dict` must exactly match the keys returned
-        by this module's :meth:`~torch.nn.Module.state_dict` function.
+    # def load_state_dict(self, state_dict: Mapping[str, Any],
+    #                     strict: bool = True):
+    #     r"""Copies parameters and buffers from :attr:`state_dict` into
+    #     this module and its descendants. If :attr:`strict` is ``True``, then
+    #     the keys of :attr:`state_dict` must exactly match the keys returned
+    #     by this module's :meth:`~torch.nn.Module.state_dict` function.
 
-        Args:
-            state_dict (dict): a dict containing parameters and
-                persistent buffers.
-            strict (bool, optional): whether to strictly enforce that the keys
-                in :attr:`state_dict` match the keys returned by this module's
-                :meth:`~torch.nn.Module.state_dict` function. Default: ``True``
+    #     Args:
+    #         state_dict (dict): a dict containing parameters and
+    #             persistent buffers.
+    #         strict (bool, optional): whether to strictly enforce that the keys
+    #             in :attr:`state_dict` match the keys returned by this module's
+    #             :meth:`~torch.nn.Module.state_dict` function. Default: ``True``
 
-        Returns:
-            ``NamedTuple`` with ``missing_keys`` and ``unexpected_keys`` fields:
-                * **missing_keys** is a list of str containing the missing keys
-                * **unexpected_keys** is a list of str containing the unexpected keys
+    #     Returns:
+    #         ``NamedTuple`` with ``missing_keys`` and ``unexpected_keys`` fields:
+    #             * **missing_keys** is a list of str containing the missing keys
+    #             * **unexpected_keys** is a list of str containing the unexpected keys
 
-        Note:
-            If a parameter or buffer is registered as ``None`` and its corresponding key
-            exists in :attr:`state_dict`, :meth:`load_state_dict` will raise a
-            ``RuntimeError``.
-        """
-        return self.lm.load_state_dict(state_dict, strict)
+    #     Note:
+    #         If a parameter or buffer is registered as ``None`` and its corresponding key
+    #         exists in :attr:`state_dict`, :meth:`load_state_dict` will raise a
+    #         ``RuntimeError``.
+    #     """
+    #     return self.lm.load_state_dict(state_dict, strict)
 
 
 ######################################################################################

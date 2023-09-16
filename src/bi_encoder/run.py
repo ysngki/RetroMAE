@@ -77,13 +77,15 @@ def main():
             training_args,
             config=config,
             cache_dir=model_args.cache_dir,
+            variant=training_args.load_variant_name
         )
 
     else:
         model = BiEncoderModel.load(
             model_args.model_name_or_path,
             normlized=model_args.normlized,
-            sentence_pooling_method=model_args.sentence_pooling_method
+            sentence_pooling_method=model_args.sentence_pooling_method,
+            variant=training_args.load_variant_name
         )
 
     # Get datasets

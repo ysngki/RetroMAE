@@ -115,3 +115,7 @@ class RetrieverTrainingArguments(TrainingArguments):
     negatives_x_device: bool = field(default=False, metadata={"help": "share negatives across devices"})
     temperature: Optional[float] = field(default=1.0)
     contrastive_loss_weight: Optional[float] = field(default=0.0001)
+    load_variant_name: Union[str] = field(
+        default="lm", metadata={"help": "If pretrained model is saved with 'variant' arg, it should be loaded "
+                                        "with this arg too."}
+    )

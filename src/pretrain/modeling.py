@@ -69,7 +69,7 @@ class RetroMAEForPretraining(nn.Module):
         return pred_scores, masked_lm_loss
 
     def save_pretrained(self, output_dir: str):
-        self.lm.save_pretrained(output_dir)
+        self.lm.save_pretrained(output_dir, variant='lm')
 
     @classmethod
     def from_pretrained(
