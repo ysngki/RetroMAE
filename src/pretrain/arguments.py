@@ -30,7 +30,7 @@ class ModelArguments:
         default=None, metadata={"help": "Pretrain method: retromae or dupmae"}
     )
     model_name_or_path: Optional[str] = field(
-        default='bert-base-uncased',
+        default=None,
         metadata={
             "help": "The model checkpoint for weights initialization."
                     "Don't set if you want to train a model from scratch."
@@ -50,4 +50,8 @@ class ModelArguments:
 
     code_num: Optional[int] = field(
         default=1, metadata={"help": "when factorize the embedding, we have two matrix as (vocab_size, code_num) and (code num, hidden states)"}
+    )
+
+    label_smoothing: Optional[float] = field(
+        default=0.0, metadata={"help": "Use for cross entropy"}
     )

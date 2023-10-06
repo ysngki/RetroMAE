@@ -106,7 +106,9 @@ def main():
 
     if model_args.model_name_or_path:
         if model_args.pretrain_method == 'yyh':
-            model = model_class.from_pretrained(model_args, model_args.model_name_or_path, emb_num=model_args.emb_num, code_num=model_args.code_num)
+            model = model_class.from_pretrained(model_args, model_args.model_name_or_path,
+                                                emb_num=model_args.emb_num, code_num=model_args.code_num,
+                                                label_smoothing=model_args.label_smoothing, weight_decay=training_args.weight_decay)
         else:
             model = model_class.from_pretrained(model_args, model_args.model_name_or_path)
         logger.info(f"------Load model from {model_args.model_name_or_path}------")
@@ -114,12 +116,13 @@ def main():
     elif model_args.config_name:
         config = AutoConfig.from_pretrained(model_args.config_name)
         if model_args.pretrain_method == 'yyh':
-            bert = YYHBertForMaskedLM(config, model_args.emb_num)
+            bert = YYHBertForMaskedLM(config, emb_num=model_args.emb_num, code_num=model_args.code_num,
+                                      label_smoothing=model_args.label_smoothing, weight_decay=training_args.weight_decay)
         else:
             bert = BertForMaskedLM(config)
         model = model_class(bert, model_args)
         logger.info("------Init the model------")
-        tokenizer = AutoTokenizer.from_pretrained(data_args.tokenizer_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_args.config_name)
     else:
         raise ValueError("You must provide the model_name_or_path or config_name")
 

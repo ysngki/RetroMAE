@@ -282,16 +282,19 @@ class BertLMPredictionHead(nn.Module):
 
     def forward(self, hidden_states):
         hidden_states = self.transform(hidden_states)
+
+        l2_loss = torch.linalg.norm(hidden_states, ord=2, dim=-1) ** 2
+
         hidden_states = self.code_book(hidden_states)
         hidden_states = self.voc_mapping(hidden_states)
 
         target_shape = list(hidden_states.shape)[:-1]
         target_shape.extend([self.vocab_size, self.emb_num])
-        hidden_states = hidden_states.reshape(target_shape)
 
-        hidden_states = torch.max(hidden_states, dim=-1)[0].contiguous()
+        reshaped_hidden_states = hidden_states.view(target_shape)
+        label_embed_offset = torch.max(reshaped_hidden_states, dim=-1)[1].contiguous()
 
-        return hidden_states
+        return hidden_states, label_embed_offset, l2_loss
     
 
 class BertOnlyMLMHead(nn.Module):
@@ -309,7 +312,7 @@ class YYHBertForMaskedLM(BertPreTrainedModel):
     _keys_to_ignore_on_load_unexpected = [r"pooler", r"predictions.decoder.bias", r"cls.predictions.decoder.weight", r"cls.predictions.bias"]
     _keys_to_ignore_on_load_missing = [r"position_ids", r"cls.predictions.code_book.weight", r"predictions.voc_mapping.bias", r"cls.predictions.voc_mapping.weight", r"cls.predictions.voc_bias"]
 
-    def __init__(self, config, emb_num=1, code_num=1):
+    def __init__(self, config, emb_num=1, code_num=1, label_smoothing=0.0, weight_decay=0.0):
         super().__init__(config)
 
         if config.is_decoder:
@@ -320,7 +323,9 @@ class YYHBertForMaskedLM(BertPreTrainedModel):
 
         self.bert = BertModel(config, add_pooling_layer=False)
         self.cls = BertOnlyMLMHead(config, emb_num=emb_num, code_num=code_num)
-
+        self.emb_num = emb_num
+        self.label_smoothing = label_smoothing
+        self.weight_decay = weight_decay
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -382,8 +387,25 @@ class YYHBertForMaskedLM(BertPreTrainedModel):
 
         masked_lm_loss = None
         if labels is not None:
-            loss_fct = CrossEntropyLoss()  # -100 index = padding token
-            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
+            loss_fct = CrossEntropyLoss(label_smoothing=self.label_smoothing)  # -100 index = padding token
+
+            if isinstance(prediction_scores, tuple):
+                scores, label_embed_offset, l2_loss = prediction_scores
+                labels_mask = (labels == loss_fct.ignore_index) * torch.ones(labels.shape, dtype=torch.long,
+                                                                             device=labels.device) * loss_fct.ignore_index
+
+                temp_mask = labels - labels_mask    # (set padding as 0)
+                label_embed_offset = torch.gather(label_embed_offset, 2, temp_mask.unsqueeze(-1)).squeeze(-1)  # (bsz, seq)
+                new_labels = labels * self.emb_num + label_embed_offset
+
+                label_indicator = (labels != loss_fct.ignore_index)
+                new_labels = new_labels * label_indicator + labels_mask
+
+                l2_loss = self.weight_decay * (l2_loss * label_indicator).sum() / label_indicator.sum()
+
+                masked_lm_loss = loss_fct(scores.view(-1, self.config.vocab_size * self.emb_num), new_labels.view(-1)) + l2_loss
+            else:
+                masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
 
         if not return_dict:
             output = (prediction_scores,) + outputs[2:]
