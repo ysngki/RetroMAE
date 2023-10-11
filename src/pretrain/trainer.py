@@ -47,3 +47,28 @@ class PreTrainer(Trainer):
 
         # Good practice: save your training arguments together with the trained model
         torch.save(self.args, os.path.join(output_dir, "training_args.bin"))
+
+    def compute_loss(self, model, inputs, return_outputs=False):
+        """
+        How the loss is computed by Trainer. By default, all models return the loss in the first element.
+
+        Subclass and override for custom behavior.
+        """
+        inputs['warmup_process'] = min(1.0, self.state.global_step / (self.state.max_steps * self.args.warmup_ratio))
+
+        outputs = model(**inputs)
+        # Save past state if it exists
+        # TODO: this needs to be fixed and made cleaner later.
+        if self.args.past_index >= 0:
+            self._past = outputs[self.args.past_index]
+
+        if isinstance(outputs, dict) and "loss" not in outputs:
+            raise ValueError(
+                "The model did not return a loss from the inputs, only the following keys: "
+                f"{','.join(outputs.keys())}. For reference, the inputs it received are {','.join(inputs.keys())}."
+            )
+
+        # We don't use .loss here since the model may return tuples instead of ModelOutput.
+        loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
+
+        return (loss, outputs) if return_outputs else loss

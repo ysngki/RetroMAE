@@ -9,6 +9,7 @@ from transformers.modeling_outputs import MaskedLMOutput
 from transformers.utils import add_start_docstrings, add_start_docstrings_to_model_forward, add_code_sample_docstrings
 from transformers.activations import ACT2FN
 from typing import List, Optional, Tuple, Union, Mapping, Any
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -87,13 +88,14 @@ class YYHBERTForPretraining(nn.Module):
         self.model_args = model_args
 
     def forward(self,
-                encoder_input_ids, encoder_attention_mask, encoder_labels):
+                encoder_input_ids, encoder_attention_mask, encoder_labels, warmup_process):
         # return (torch.sum(self.lm.bert.embeddings.position_ids[:, :decoder_input_ids.size(1)]), )
         lm_out: MaskedLMOutput = self.lm(
             encoder_input_ids, encoder_attention_mask,
             labels=encoder_labels,
             output_hidden_states=True,
-            return_dict=True
+            return_dict=True,
+            warmup_process=warmup_process,
         )
 
         return (lm_out.loss,)
@@ -280,7 +282,9 @@ class BertLMPredictionHead(nn.Module):
         # Need a link between the two variables so that the bias is correctly resized with `resize_token_embeddings`
         self.voc_mapping.bias = self.voc_bias
 
-    def forward(self, hidden_states):
+    # 使用了 label smooth，并且要求embedding靠近原点
+    # 只训练了40000w步，看起来好像确实有点用。不过20000步的时候看着没啥用。
+    def old_forward(self, hidden_states):
         hidden_states = self.transform(hidden_states)
 
         l2_loss = torch.linalg.norm(hidden_states, ord=2, dim=-1) ** 2
@@ -295,6 +299,22 @@ class BertLMPredictionHead(nn.Module):
         label_embed_offset = torch.max(reshaped_hidden_states, dim=-1)[1].contiguous()
 
         return hidden_states, label_embed_offset, l2_loss
+
+    def forward(self, hidden_states, temperature):
+        hidden_states = self.transform(hidden_states)
+        hidden_states = self.code_book(hidden_states)
+        hidden_states = self.voc_mapping(hidden_states)
+
+        target_shape = list(hidden_states.shape)[:-1]
+        target_shape.extend([self.vocab_size, self.emb_num])
+
+        reshaped_hidden_states = hidden_states.reshape(target_shape)
+
+        # todo!!! detach or not?
+        soft_weight = torch.nn.functional.softmax(reshaped_hidden_states / temperature, dim=-1).detach()
+        hidden_states = (soft_weight * reshaped_hidden_states).sum(dim=-1)
+
+        return hidden_states, None, None
     
 
 class BertOnlyMLMHead(nn.Module):
@@ -302,8 +322,8 @@ class BertOnlyMLMHead(nn.Module):
         super().__init__()
         self.predictions = BertLMPredictionHead(config, emb_num=emb_num, code_num=code_num)
 
-    def forward(self, sequence_output: torch.Tensor) -> torch.Tensor:
-        prediction_scores = self.predictions(sequence_output)
+    def forward(self, sequence_output: torch.Tensor, temperature: float) -> torch.Tensor:
+        prediction_scores = self.predictions(sequence_output, temperature)
         return prediction_scores
     
 
@@ -358,6 +378,7 @@ class YYHBertForMaskedLM(BertPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        warmup_process: Optional[float] = 1.0,
     ) -> Union[Tuple[torch.Tensor], MaskedLMOutput]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -365,7 +386,6 @@ class YYHBertForMaskedLM(BertPreTrainedModel):
             config.vocab_size]` (see `input_ids` docstring) Tokens with indices set to `-100` are ignored (masked), the
             loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`
         """
-
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         outputs = self.bert(
@@ -383,7 +403,7 @@ class YYHBertForMaskedLM(BertPreTrainedModel):
         )
 
         sequence_output = outputs[0]
-        prediction_scores = self.cls(sequence_output)
+        prediction_scores = self.cls(sequence_output, temperature=(math.cos(warmup_process * math.pi) + 1) * 5.0 + 0.3)
 
         masked_lm_loss = None
         if labels is not None:
@@ -391,19 +411,24 @@ class YYHBertForMaskedLM(BertPreTrainedModel):
 
             if isinstance(prediction_scores, tuple):
                 scores, label_embed_offset, l2_loss = prediction_scores
-                labels_mask = (labels == loss_fct.ignore_index) * torch.ones(labels.shape, dtype=torch.long,
-                                                                             device=labels.device) * loss_fct.ignore_index
+                # new with temperature
+                if label_embed_offset is None:
+                    masked_lm_loss = loss_fct(scores.view(-1, self.config.vocab_size), labels.view(-1))
+                # old
+                else:
+                    labels_mask = (labels == loss_fct.ignore_index) * torch.ones(labels.shape, dtype=torch.long,
+                                                                                 device=labels.device) * loss_fct.ignore_index
 
-                temp_mask = labels - labels_mask    # (set padding as 0)
-                label_embed_offset = torch.gather(label_embed_offset, 2, temp_mask.unsqueeze(-1)).squeeze(-1)  # (bsz, seq)
-                new_labels = labels * self.emb_num + label_embed_offset
+                    temp_mask = labels - labels_mask    # (set padding as 0)
+                    label_embed_offset = torch.gather(label_embed_offset, 2, temp_mask.unsqueeze(-1)).squeeze(-1)  # (bsz, seq)
+                    new_labels = labels * self.emb_num + label_embed_offset
 
-                label_indicator = (labels != loss_fct.ignore_index)
-                new_labels = new_labels * label_indicator + labels_mask
+                    label_indicator = (labels != loss_fct.ignore_index)
+                    new_labels = new_labels * label_indicator + labels_mask
 
-                l2_loss = self.weight_decay * (l2_loss * label_indicator).sum() / label_indicator.sum()
+                    l2_loss = self.weight_decay * (l2_loss * label_indicator).sum() / label_indicator.sum()
 
-                masked_lm_loss = loss_fct(scores.view(-1, self.config.vocab_size * self.emb_num), new_labels.view(-1)) + l2_loss
+                    masked_lm_loss = loss_fct(scores.view(-1, self.config.vocab_size * self.emb_num), new_labels.view(-1)) + l2_loss
             else:
                 masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
 
